@@ -2,7 +2,7 @@ import argparse
 
 import numpy as np
 import torch
-from diffusers import AutoencoderKL, DDPMScheduler, LCMScheduler, UNet2DConditionModel
+from diffusers import AutoencoderKL, DDPMScheduler, LCMScheduler, UNet2DConditionModel, AutoencoderTiny
 from PIL import Image
 from torchvision import transforms
 from tqdm import tqdm
@@ -31,14 +31,14 @@ class Step1X3DTextureConfig:
     def __init__(self):
         # prepare pipeline params
         self.base_model = "stabilityai/stable-diffusion-xl-base-1.0"
-        self.vae_model = "madebyollin/sdxl-vae-fp16-fix"
+        self.vae_model = "madebyollin/taesdxl"
         self.unet_model = None
         self.lora_model = None
         self.adapter_path = "stepfun-ai/Step1X-3D"
         self.scheduler = None
         self.num_views = 6
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.dtype = torch.float16
+        self.dtype = torch.bfloat16
         self.lora_scale = None
 
         # run pipeline params
@@ -115,9 +115,10 @@ class Step1X3DTexturePipeline:
         # Load vae and unet if provided
         pipe_kwargs = {}
         if vae_model is not None:
-            pipe_kwargs["vae"] = AutoencoderKL.from_pretrained(vae_model)
+            # pipe_kwargs["vae"] = AutoencoderKL.from_pretrained(vae_model)
+            pipe_kwargs["vae"] = AutoencoderTiny.from_pretrained(vae_model)
         if unet_model is not None:
-            pipe_kwargs["unet"] = UNet2DConditionModel.from_pretrained(unet_model)
+            pipe_kwargs["unet"] = UNet2DConditionModel.from_pretrained(unet_model).to(torch.bfloat16)
 
         # Prepare pipeline
         pipe = IG2MVSDXLPipeline.from_pretrained(base_model, **pipe_kwargs)
