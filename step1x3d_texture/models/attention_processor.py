@@ -10,6 +10,16 @@ from diffusers.utils.import_utils import is_torch_npu_available, is_xformers_ava
 from einops import rearrange, repeat
 from torch import nn
 
+# Use SageAttention instead of scaled_dot_product_attention
+try:
+    from sageattention import sageattn
+    attention_function = sageattn
+except ImportError:
+    raise ImportError(
+        'Please install the package "sageattention" to use SageAttention. '
+        'Install with: pip install git+https://github.com/thu-ml/SageAttention.git'
+    )
+
 
 def default_set_attn_proc_func(
     name: str,
@@ -100,11 +110,7 @@ class DecoupledMVRowSelfAttnProcessor2_0(torch.nn.Module):
         use_mv: bool = True,
         use_ref: bool = False,
     ):
-        if not hasattr(F, "scaled_dot_product_attention"):
-            raise ImportError(
-                "DecoupledMVRowSelfAttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0."
-            )
-
+        # No longer checking for F.scaled_dot_product_attention since we're using SageAttention
         super().__init__()
 
         self.num_views = num_views
@@ -204,16 +210,6 @@ class DecoupledMVRowSelfAttnProcessor2_0(torch.nn.Module):
             else encoder_hidden_states.shape
         )
 
-        if attention_mask is not None:
-            attention_mask = attn.prepare_attention_mask(
-                attention_mask, sequence_length, batch_size
-            )
-            # scaled_dot_product_attention expects attention_mask shape to be
-            # (batch, heads, source_length, target_length)
-            attention_mask = attention_mask.view(
-                batch_size, attn.heads, -1, attention_mask.shape[-1]
-            )
-
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(
                 1, 2
@@ -247,10 +243,9 @@ class DecoupledMVRowSelfAttnProcessor2_0(torch.nn.Module):
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
-        # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        hidden_states = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
+        # Use SageAttention instead of scaled_dot_product_attention
+        hidden_states = attention_function(
+            query, key, value, tensor_layout="HND", is_causal=False
         )
 
         hidden_states = hidden_states.transpose(1, 2).reshape(
@@ -302,11 +297,11 @@ class DecoupledMVRowSelfAttnProcessor2_0(torch.nn.Module):
                 .transpose(1, 2)
             )
 
-            hidden_states_mv = F.scaled_dot_product_attention(
+            hidden_states_mv = attention_function(
                 query_mv,
                 key_mv,
                 value_mv,
-                dropout_p=0.0,
+                tensor_layout="HND",
                 is_causal=False,
             )
             hidden_states_mv = rearrange(
@@ -336,8 +331,8 @@ class DecoupledMVRowSelfAttnProcessor2_0(torch.nn.Module):
                 1, 2
             )
 
-            hidden_states_ref = F.scaled_dot_product_attention(
-                query_ref, key_ref, value_ref, dropout_p=0.0, is_causal=False
+            hidden_states_ref = attention_function(
+                query_ref, key_ref, value_ref, tensor_layout="HND", is_causal=False
             )
 
             hidden_states_ref = hidden_states_ref.transpose(1, 2).reshape(
@@ -391,11 +386,7 @@ class DecoupledMVRowColSelfAttnProcessor2_0(torch.nn.Module):
         use_mv: bool = True,
         use_ref: bool = False,
     ):
-        if not hasattr(F, "scaled_dot_product_attention"):
-            raise ImportError(
-                "DecoupledMVRowSelfAttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0."
-            )
-
+        # No longer checking for F.scaled_dot_product_attention since we're using SageAttention
         super().__init__()
 
         self.num_views = num_views
@@ -495,16 +486,6 @@ class DecoupledMVRowColSelfAttnProcessor2_0(torch.nn.Module):
             else encoder_hidden_states.shape
         )
 
-        if attention_mask is not None:
-            attention_mask = attn.prepare_attention_mask(
-                attention_mask, sequence_length, batch_size
-            )
-            # scaled_dot_product_attention expects attention_mask shape to be
-            # (batch, heads, source_length, target_length)
-            attention_mask = attention_mask.view(
-                batch_size, attn.heads, -1, attention_mask.shape[-1]
-            )
-
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(
                 1, 2
@@ -538,10 +519,9 @@ class DecoupledMVRowColSelfAttnProcessor2_0(torch.nn.Module):
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
-        # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        hidden_states = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
+        # Use SageAttention instead of scaled_dot_product_attention
+        hidden_states = attention_function(
+            query, key, value, tensor_layout="HND", is_causal=False
         )
 
         hidden_states = hidden_states.transpose(1, 2).reshape(
@@ -592,11 +572,11 @@ class DecoupledMVRowColSelfAttnProcessor2_0(torch.nn.Module):
             value_mv_0123 = rearrange(
                 value_mv[:, 0:4], "b nv ih iw h c -> (b ih) h (nv iw) c"
             )
-            hidden_states_mv_0123 = F.scaled_dot_product_attention(
+            hidden_states_mv_0123 = attention_function(
                 query_mv_0123,
                 key_mv_0123,
                 value_mv_0123,
-                dropout_p=0.0,
+                tensor_layout="HND",
                 is_causal=False,
             )
             hidden_states_mv_0123 = rearrange(
@@ -637,11 +617,11 @@ class DecoupledMVRowColSelfAttnProcessor2_0(torch.nn.Module):
             value_mv_0245 = rearrange(
                 value_mv_0245, "b nv ih iw h c -> (b iw) h (nv ih) c"
             )
-            hidden_states_mv_0245 = F.scaled_dot_product_attention(
+            hidden_states_mv_0245 = attention_function(
                 query_mv_0245,
                 key_mv_0245,
                 value_mv_0245,
-                dropout_p=0.0,
+                tensor_layout="HND",
                 is_causal=False,
             )
             # flip back
@@ -702,8 +682,8 @@ class DecoupledMVRowColSelfAttnProcessor2_0(torch.nn.Module):
                 1, 2
             )
 
-            hidden_states_ref = F.scaled_dot_product_attention(
-                query_ref, key_ref, value_ref, dropout_p=0.0, is_causal=False
+            hidden_states_ref = attention_function(
+                query_ref, key_ref, value_ref, tensor_layout="HND", is_causal=False
             )
 
             hidden_states_ref = hidden_states_ref.transpose(1, 2).reshape(
